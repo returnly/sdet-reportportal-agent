@@ -26,9 +26,6 @@ export class ParallelRestClient {
     return [this.baseURL, path].join('/')
   }
 
-  buildPathToSyncAPI(path) {
-    return [this.baseURL.replace('/v2', '/v1'), path].join('/')
-  }
 
   static generateAgent(url: string) {
     const proxy = 'pac+https://app.strongdm.com/proxy.pac?all'
@@ -118,14 +115,5 @@ export class ParallelRestClient {
       ...options,
       ...this.getRestConfig(),
     })
-  }
-
-  retrieveSyncAPI(path, options = { headers: this.headers }) {
-    return ParallelRestClient.request(
-      'GET',
-      this.buildPathToSyncAPI(path),
-      {},
-      { ...options, ...this.getRestConfig() }
-    )
   }
 }
