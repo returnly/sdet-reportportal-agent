@@ -41,7 +41,7 @@
   },
   "devDependencies": {
     "@rtly-sdet/logger": "1.0.3",
-    "@rtly-sdet/utils": "0.0.31",
+    "@rtly-sdet/utils": "0.0.38",
     "@types/chai": "^4.2.22",
     "@types/mocha": "^9.0.0",
     "@types/node": "^16.10.3",
