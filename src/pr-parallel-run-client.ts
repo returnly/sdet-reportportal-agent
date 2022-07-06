@@ -1,7 +1,7 @@
 /* eslint-disable quotes,no-console,class-methods-use-this */
 import { ClientHelpers } from './client-helpers'
+import { ParallelRestClient } from './parallel-rest-client'
 import { Log, LogComponent } from '@rtly-sdet/logger'
-import { HttpClient } from '@rtly-sdet/utils'
 
 const UniqId = require('uniqid')
 const helpers = require('@reportportal/client-javascript/lib/helpers')
@@ -24,8 +24,10 @@ export class PrParallelRunClient {
   private baseURL: string
   private baseLaunchURL: string
   private headers: Record<string, string>
+  private token: string
   private config: any
   private helpers: ClientHelpers
+  private restClient: any
   private analytics: any
   private launchUuid: string
   private nonRetriedItemMap: Map<any, any>
@@ -71,8 +73,14 @@ export class PrParallelRunClient {
       Authorization: `bearer ${params.token}`,
       ...(params.headers || {}),
     }
+    this.token = params.token
     this.config = params
     this.helpers = new ClientHelpers()
+    this.restClient = new ParallelRestClient({
+      baseURL: this.baseURL,
+      headers: this.headers,
+      restClientConfig: params.restClientConfig,
+    })
     this.analytics = new Analytics(agentParams)
     this.launchUuid = ''
     this.nonRetriedItemMap = new Map()
@@ -200,30 +208,22 @@ export class PrParallelRunClient {
       this.map[tempId] = this.getNewItemObj((resolve, reject) => {
         const url = 'launch'
         this.logDebug(`Start launch ${tempId}`)
-
-        new HttpClient()
-          .post(
-            `${this.baseURL}/${url}`,
-            'sdet-reportportal-agent',
-            this.headers,
-            launchData
-          )
-          .then(
-            (response) => {
-              this.map[tempId].realId = response.body.id
-              this.map[tempId].launchNumber = response.body.number
-              this.launchUuid = response.body.id
-              this.printLaunchURL(this.launchUuid)
-              if (this.isLaunchMergeRequired) {
-                helpers.saveLaunchIdToFile(response.body.id)
-              }
-              resolve(response.body)
-            },
-            (error) => {
-              log.error(error)
-              reject(error)
+        this.restClient.create(url, launchData, { headers: this.headers }).then(
+          (response) => {
+            this.map[tempId].realId = response.id
+            this.map[tempId].launchNumber = response.number
+            this.launchUuid = response.id
+            this.printLaunchURL(this.launchUuid)
+            if (this.isLaunchMergeRequired) {
+              helpers.saveLaunchIdToFile(response.id)
             }
-          )
+            resolve(response)
+          },
+          (error) => {
+            console.dir(error)
+            reject(error)
+          }
+        )
       })
     }
     this.triggerAnalyticsEvent()
@@ -236,18 +236,16 @@ export class PrParallelRunClient {
   printLaunchURL(id: string) {
     const url = ['launch', 'uuid', id].join('/')
 
-    new HttpClient()
-      .get(`${this.baseURL}/${url}`, 'sdet-reportportal-agent', this.headers)
-      .then(
-        (response) => {
-          log.info(
-            `Report Portal Launch Link: ${this.baseLaunchURL}/${response.body.id}`
-          )
-        },
-        (error) => {
-          log.error(error)
-        }
-      )
+    this.restClient.retrieve(url, { headers: this.headers }).then(
+      (response) => {
+        log.info(
+          `Report Portal Launch Link: ${this.baseLaunchURL}/${response.id}`
+        )
+      },
+      (error) => {
+        log.error(error)
+      }
+    )
   }
 
   /**
@@ -284,18 +282,12 @@ export class PrParallelRunClient {
           () => {
             this.logDebug(`Finish launch ${launchTempId}`)
             const url = ['launch', launchObj.realId, 'finish'].join('/')
-
-            new HttpClient()
-              .put(
-                `${this.baseURL}/${url}`,
-                'sdet-reportportal-agent',
-                this.headers,
-                finishExecutionData
-              )
+            this.restClient
+              .update(url, finishExecutionData, { headers: this.headers })
               .then(
                 (response) => {
                   this.logDebug(`Success finish launch ${launchTempId}`)
-                  launchObj.resolveFinish(response.body)
+                  launchObj.resolveFinish(response)
                 },
                 (error) => {
                   this.logDebug(`Error finish launch ${launchTempId}`)
@@ -338,22 +330,14 @@ export class PrParallelRunClient {
     launchObj.promiseFinish.then(
       () => {
         const url = ['launch', launchObj.realId, 'update'].join('/')
-
-        new HttpClient()
-          .put(
-            `${this.baseURL}/${url}`,
-            'sdet-reportportal-agent',
-            this.headers,
-            launchData
-          )
-          .then(
-            (response) => {
-              resolvePromise(response.body)
-            },
-            (error) => {
-              rejectPromise(error)
-            }
-          )
+        this.restClient.update(url, launchData, { headers: this.headers }).then(
+          (response) => {
+            resolvePromise(response)
+          },
+          (error) => {
+            rejectPromise(error)
+          }
+        )
       },
       (error) => {
         rejectPromise(error)
@@ -458,22 +442,16 @@ export class PrParallelRunClient {
           }
           testItemData.launchUuid = realLaunchId
           this.logDebug(`Start test item ${tempId}`)
-
-          new HttpClient()
-            .post(
-              `${this.baseURL}/${url}`,
-              'sdet-reportportal-agent',
-              this.headers,
-              testItemData
-            )
+          this.restClient
+            .create(url, testItemData, { headers: this.headers })
             .then(
               (response) => {
                 this.logDebug(
-                  `Success start item ${tempId}, realId:  ${response.body.id}`
+                  `Success start item ${tempId}, realId:  ${response.id}`
                 )
-                this.map[tempId].realId = response.body.id
+                this.map[tempId].realId = response.id
                 this.nonRetriedItemMap.delete(itemKey)
-                resolve(response.body)
+                resolve(response)
               },
               (error) => {
                 this.logDebug(`Error start item ${tempId}:`)
@@ -644,11 +622,10 @@ export class PrParallelRunClient {
     const requestPromise = (itemUuid, launchUuid) => {
       const url = 'log'
       const isItemUuid = itemUuid !== launchUuid
-      return new HttpClient().post(
-        `${this.baseURL}/${url}`,
-        'sdet-reportportal-agent',
-        this.headers,
-        Object.assign(saveLogRQ, { launchUuid }, isItemUuid && { itemUuid })
+      return this.restClient.create(
+        url,
+        Object.assign(saveLogRQ, { launchUuid }, isItemUuid && { itemUuid }),
+        { headers: this.headers }
       )
     }
     return this.saveLog(itemObj, requestPromise)
@@ -701,17 +678,19 @@ export class PrParallelRunClient {
     const url = 'log'
     // eslint-disable-next-line no-param-reassign
     saveLogRQ.file = { name: fileObj.name }
-    return new HttpClient()
-      .post(
-        `${this.baseURL}/${url}`,
-        'sdet-reportportal-agent',
+    return this.restClient
+      .create(
+        url,
+        this.buildMultiPartStream([saveLogRQ], fileObj, MULTIPART_BOUNDARY),
         {
-          ...this.headers, // eslint-disable-next-line @typescript-eslint/naming-convention
-          'Content-Type': `multipart/form-data; boundary=${MULTIPART_BOUNDARY}`,
-        },
-        this.buildMultiPartStream([saveLogRQ], fileObj, MULTIPART_BOUNDARY)
+          headers: {
+            ...this.headers,
+            // eslint-disable-next-line @typescript-eslint/naming-convention
+            'Content-Type': `multipart/form-data; boundary=${MULTIPART_BOUNDARY}`,
+          },
+        }
       )
-      .then((response) => response.body)
+      .then((response) => response)
       .catch((error) => {
         this.logDebug('ERROR')
         this.logDebug(error)
@@ -767,17 +746,18 @@ export class PrParallelRunClient {
         const url = ['item', itemObj.realId].join('/')
         this.logDebug(`Finish test item ${itemTempId}`)
         // eslint-disable-next-line max-len
-        new HttpClient()
-          .put(
-            `${this.baseURL}/${url}`,
-            'sdet-reportportal-agent',
-            this.headers,
-            Object.assign(finishTestItemData, { launchUuid: this.launchUuid })
+        this.restClient
+          .update(
+            url,
+            Object.assign(finishTestItemData, { launchUuid: this.launchUuid }),
+            {
+              headers: this.headers,
+            }
           )
           .then(
             (response) => {
               this.logDebug(`Success finish item ${itemTempId}`)
-              itemObj.resolveFinish(response.body)
+              itemObj.resolveFinish(response)
               itemObj.finishCompleted = true
             },
             (error) => {
