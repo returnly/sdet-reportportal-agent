@@ -12,7 +12,7 @@ steps:
       - 'npm run test'
     plugins:
       docker#v3.5.0:
-        image: 'node:12'
+        image: 'node:14'
         propagate-environment: true
         volumes:
           - '.:/usr/src/app'
@@ -36,7 +36,7 @@ steps:
           parameters:
             NPM_PASSWORD: /returnly/secrets/common/nexus_repo_password
       - docker#v3.5.0:
-          image: 'node:12'
+          image: 'node:14'
           propagate-environment: true
           workdir: /usr/src/app
           volumes:
@@ -65,7 +65,7 @@ steps:
           parameters:
             NPM_PASSWORD: /returnly/secrets/common/nexus_repo_password
       - docker#v3.5.0:
-          image: 'node:12'
+          image: 'node:14'
           propagate-environment: true
           workdir: /usr/src/app
           volumes:
